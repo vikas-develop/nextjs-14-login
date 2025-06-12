@@ -14,7 +14,7 @@ A simple login application built with Next.js 14, TypeScript, and Tailwind CSS.
 
 1. Clone the repository:
 ```bash
-git clone <your-repository-url>
+git clone https://github.com/vikas-develop/nextjs-14-login.git
 ```
 
 2. Install dependencies:
