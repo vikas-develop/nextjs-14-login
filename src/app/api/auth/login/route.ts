@@ -1,47 +1,102 @@
 import { NextResponse } from 'next/server';
-
-// This is a mock user database - in a real application, you would use a proper database
-const MOCK_USER = {
-  id: '1',
-  email: 'test@example.com',
-  name: 'Test User',
-  password: 'password123' // In a real app, this would be hashed
-};
+import { findUserByEmail, verifyPassword, generateToken, useBackupCode } from '@/lib/auth';
+import { verifyTOTP } from '@/lib/twoFactor';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, password } = body;
+    const { email, password, twoFactorToken, isBackupCode } = body;
 
-    // In a real application, you would:
-    // 1. Validate the input
-    // 2. Check the database for the user
-    // 3. Compare hashed passwords
-    // 4. Generate a JWT token
-    
-    if (email === MOCK_USER.email && password === MOCK_USER.password) {
-      // In a real app, you would set an HTTP-only cookie with a JWT token
-      const response = NextResponse.json({
-        id: MOCK_USER.id,
-        email: MOCK_USER.email,
-        name: MOCK_USER.name
-      });
-      
-      response.cookies.set('auth-token', 'mock-jwt-token', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 60 * 60 * 24 * 7 // 1 week
-      });
-
-      return response;
+    // Validate input
+    if (!email || !password) {
+      return NextResponse.json(
+        { error: 'Email and password are required' },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json(
-      { error: 'Invalid credentials' },
-      { status: 401 }
-    );
+    // Find user by email
+    const user = await findUserByEmail(email);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Invalid credentials' },
+        { status: 401 }
+      );
+    }
+
+    // Verify password
+    const isPasswordValid = await verifyPassword(password, user.password);
+    if (!isPasswordValid) {
+      return NextResponse.json(
+        { error: 'Invalid credentials' },
+        { status: 401 }
+      );
+    }
+
+    // Check if 2FA is enabled
+    if (user.twoFactorEnabled) {
+      // If 2FA token not provided, request it
+      if (!twoFactorToken) {
+        return NextResponse.json(
+          { 
+            error: 'Two-factor authentication required',
+            requiresTwoFactor: true
+          },
+          { status: 200 }
+        );
+      }
+
+      // Verify 2FA token
+      let twoFactorValid = false;
+      
+      if (isBackupCode) {
+        // Verify backup code
+        twoFactorValid = await useBackupCode(user.id, twoFactorToken);
+      } else {
+        // Verify TOTP
+        if (user.twoFactorSecret) {
+          twoFactorValid = verifyTOTP(twoFactorToken, user.twoFactorSecret);
+        }
+      }
+
+      if (!twoFactorValid) {
+        return NextResponse.json(
+          { error: 'Invalid two-factor authentication code' },
+          { status: 401 }
+        );
+      }
+    }
+
+    // Create user payload (without password)
+    const userPayload = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      emailVerified: user.emailVerified,
+      twoFactorEnabled: user.twoFactorEnabled,
+    };
+
+    // Generate JWT token
+    const token = generateToken(userPayload);
+
+    // Create response with user data
+    const response = NextResponse.json({
+      user: userPayload,
+      token, // Include token in response for client-side storage if needed
+    });
+
+    // Set HTTP-only cookie with JWT token
+    response.cookies.set('auth-token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: '/',
+    });
+
+    return response;
   } catch (error) {
+    console.error('Login error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
