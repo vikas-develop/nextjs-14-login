@@ -8,10 +8,37 @@ const MOCK_USER = {
   password: 'password123' // In a real app, this would be hashed
 };
 
+// Simple puzzle verification function
+function verifyPuzzle(question: string, userAnswer: number): boolean {
+  try {
+    // Parse the question and calculate the correct answer
+    const cleanQuestion = question.replace(/×/g, '*'); // Replace × with *
+    const correctAnswer = eval(cleanQuestion);
+    return correctAnswer === userAnswer;
+  } catch (error) {
+    return false;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, password } = body;
+    const { email, password, puzzleQuestion, puzzleAnswer } = body;
+
+    // Validate puzzle first
+    if (!puzzleQuestion || puzzleAnswer === undefined || puzzleAnswer === null) {
+      return NextResponse.json(
+        { error: 'Puzzle verification required' },
+        { status: 400 }
+      );
+    }
+
+    if (!verifyPuzzle(puzzleQuestion, parseInt(puzzleAnswer))) {
+      return NextResponse.json(
+        { error: 'Invalid puzzle answer' },
+        { status: 400 }
+      );
+    }
 
     // In a real application, you would:
     // 1. Validate the input
