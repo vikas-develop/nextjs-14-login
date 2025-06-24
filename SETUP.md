@@ -41,7 +41,35 @@ npm install
 npm list --depth=0
 ```
 
-### Step 3: Environment Configuration
+### Step 3: MongoDB Setup
+
+Choose one of the following options:
+
+#### Option A: Local MongoDB
+```bash
+# Install MongoDB (Ubuntu/Debian)
+sudo apt update && sudo apt install -y mongodb
+sudo systemctl start mongodb
+
+# Or install via MongoDB official repository
+wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | sudo apt-key add -
+echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+sudo apt update && sudo apt install -y mongodb-org
+sudo systemctl start mongod
+```
+
+#### Option B: MongoDB Atlas (Recommended)
+1. Visit [MongoDB Atlas](https://www.mongodb.com/atlas)
+2. Create free account and cluster
+3. Get connection string
+4. Replace password and database name
+
+#### Option C: Docker MongoDB
+```bash
+docker run -d -p 27017:27017 --name nextlogin-mongo -v mongodb_data:/data/db mongo:latest
+```
+
+### Step 4: Environment Configuration
 
 Create a `.env.local` file in the project root:
 
@@ -65,6 +93,12 @@ NEXTAUTH_URL=http://localhost:4000
 
 # Environment
 NODE_ENV=development
+
+# MongoDB Connection String (Required)
+MONGODB_URI=mongodb://localhost:27017/nextlogin
+
+# For MongoDB Atlas, use:
+# MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/nextlogin
 
 # ============================================================================
 # EMAIL CONFIGURATION (Optional for development)
@@ -125,9 +159,12 @@ SMTP_USER=your-mailgun-smtp-username
 SMTP_PASS=your-mailgun-smtp-password
 ```
 
-### Step 6: Start Development Server
+### Step 6: Initialize Database and Start Server
 
 ```bash
+# Seed the database with default users
+npm run seed
+
 # Start the development server
 npm run dev
 

@@ -41,6 +41,9 @@ JWT_SECRET=<64-character-secure-random-string>
 NEXTAUTH_URL=https://yourdomain.com
 NODE_ENV=production
 
+# MongoDB Database (Required)
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/nextlogin
+
 # Email Provider (Required)
 SMTP_HOST=smtp.youremailprovider.com
 SMTP_PORT=587
@@ -233,34 +236,30 @@ module.exports = {
    SMTP_PASS=your-ses-smtp-password
    ```
 
-## 🗄️ Database Migration
+## 🗄️ Database Setup
 
-Currently using in-memory storage. For production, choose a database:
+**Current Implementation**: MongoDB with Mongoose
 
-### Supabase (Recommended for Simplicity)
+For production, you have these MongoDB options:
+
+### MongoDB Atlas (Recommended for Production)
 
 1. **Setup:**
-   ```bash
-   npm install @supabase/supabase-js
-   ```
+   - Go to [MongoDB Atlas](https://www.mongodb.com/atlas)
+   - Create a free or paid cluster
+   - Create a database user
+   - Whitelist your deployment IP addresses
 
-2. **Create Client:**
-   ```javascript
-   // lib/supabase.js
-   import { createClient } from '@supabase/supabase-js'
-   
-   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-   
-   export const supabase = createClient(supabaseUrl, supabaseKey)
-   ```
-
-3. **Environment Variables:**
+2. **Connection String:**
    ```env
-   NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+   MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/nextlogin?retryWrites=true&w=majority
    ```
+
+3. **Security:**
+   - Enable authentication
+   - Use strong passwords
+   - Restrict IP access
+   - Enable MongoDB's built-in security features
 
 ### PostgreSQL with Prisma
 

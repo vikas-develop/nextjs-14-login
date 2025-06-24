@@ -20,6 +20,7 @@ Before you begin, ensure you have the following installed:
 - **Node.js** (v18 or higher)
 - **npm** or **yarn**
 - **Git**
+- **MongoDB** (local installation or MongoDB Atlas)
 - **Authenticator app** (Google Authenticator, Authy, etc.) for 2FA testing
 
 ## 🛠️ Installation
@@ -37,7 +38,41 @@ cd nextlogin
 npm install
 ```
 
-### 3. Environment Setup
+### 3. MongoDB Setup
+
+#### Option A: Local MongoDB Installation
+
+```bash
+# Install MongoDB on Ubuntu/Debian
+sudo apt update
+sudo apt install -y mongodb
+
+# Start MongoDB service
+sudo systemctl start mongodb
+sudo systemctl enable mongodb
+
+# Verify MongoDB is running
+sudo systemctl status mongodb
+```
+
+#### Option B: MongoDB Atlas (Cloud)
+
+1. Go to [MongoDB Atlas](https://www.mongodb.com/atlas)
+2. Create a free account and cluster
+3. Get your connection string
+4. Replace `<password>` and `<dbname>` in the connection string
+
+#### Option C: Docker MongoDB
+
+```bash
+# Run MongoDB in Docker
+docker run -d -p 27017:27017 --name mongodb mongo:latest
+
+# Or with persistent data
+docker run -d -p 27017:27017 -v mongodb_data:/data/db --name mongodb mongo:latest
+```
+
+### 4. Environment Setup
 
 Create a `.env.local` file in the root directory:
 
@@ -56,6 +91,9 @@ NEXTAUTH_URL=http://localhost:4000
 
 # Node Environment
 NODE_ENV=development
+
+# MongoDB Database URL (Required)
+MONGODB_URI=mongodb://localhost:27017/nextlogin
 
 # Email Configuration (Optional for development)
 SMTP_HOST=smtp.gmail.com
@@ -103,6 +141,10 @@ For production, configure your SMTP settings:
 ### Development Server
 
 ```bash
+# Seed the database with default users (run once)
+npm run seed
+
+# Start the development server
 npm run dev
 ```
 
@@ -276,11 +318,18 @@ FROM_EMAIL=noreply@yourdomain.com
 
 ### Database Integration
 
-Currently using in-memory storage. For production, replace the mock data in `src/lib/auth.ts` with:
+**Current Implementation**: MongoDB with Mongoose
 
+The application now uses MongoDB as the primary database with the following features:
+- User authentication and management
+- Email verification tokens
+- Password reset tokens
+- Two-factor authentication secrets and backup codes
+- User session tracking
+
+**Alternative Databases** (if you want to switch):
 - **PostgreSQL** with Prisma
-- **MongoDB** with Mongoose
-- **MySQL** with any ORM
+- **MySQL** with Sequelize or Prisma
 - **Supabase** for serverless database
 
 ## 🛠️ Customization

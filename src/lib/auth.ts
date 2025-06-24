@@ -1,6 +1,8 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import connectDB from './mongodb';
+import User, { IUser } from '../models/User';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this-in-production';
 
@@ -17,19 +19,13 @@ export interface JWTPayload extends UserPayload {
   exp: number;
 }
 
-export interface User {
+export interface UserData {
   id: string;
   email: string;
   name: string;
-  password: string;
   emailVerified: boolean;
-  emailVerificationToken?: string;
-  emailVerificationExpires?: Date;
-  passwordResetToken?: string;
-  passwordResetExpires?: Date;
   twoFactorEnabled: boolean;
-  twoFactorSecret?: string;
-  twoFactorBackupCodes?: string[];
+  lastLogin?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -60,71 +56,12 @@ export function verifyToken(token: string): UserPayload | null {
       id: decoded.id,
       email: decoded.email,
       name: decoded.name,
+      emailVerified: decoded.emailVerified,
+      twoFactorEnabled: decoded.twoFactorEnabled,
     };
   } catch (error) {
     return null;
   }
-}
-
-// Mock user database - In a real application, replace this with actual database calls
-const USERS: User[] = [
-  {
-    id: '1',
-    email: 'test@example.com',
-    name: 'Test User',
-    password: '$2b$12$ph6abT41YorBZxoZZnqOUuF4MdDQxNWftr5zyy.H9Mlx9BwbmBBqu', // password123
-    emailVerified: true,
-    twoFactorEnabled: false,
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01'),
-  },
-  {
-    id: '2',
-    email: 'admin@example.com',
-    name: 'Admin User',
-    password: '$2b$12$ph6abT41YorBZxoZZnqOUuF4MdDQxNWftr5zyy.H9Mlx9BwbmBBqu', // password123
-    emailVerified: true,
-    twoFactorEnabled: false,
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01'),
-  }
-];
-
-// Find user by email
-export async function findUserByEmail(email: string) {
-  return USERS.find(user => user.email === email) || null;
-}
-
-// Find user by ID
-export async function findUserById(id: string) {
-  const user = USERS.find(user => user.id === id);
-  if (!user) return null;
-  
-  // Return user without password
-  const { password, ...userWithoutPassword } = user;
-  return userWithoutPassword;
-}
-
-// Create user (for registration)
-export async function createUser(email: string, name: string, password: string) {
-  const hashedPassword = await hashPassword(password);
-  const now = new Date();
-  const newUser: User = {
-    id: String(USERS.length + 1),
-    email,
-    name,
-    password: hashedPassword,
-    emailVerified: false,
-    twoFactorEnabled: false,
-    createdAt: now,
-    updatedAt: now,
-  };
-  
-  USERS.push(newUser);
-  
-  // Return user without password
-  const { password: _, ...userWithoutPassword } = newUser;
-  return userWithoutPassword;
 }
 
 // Generate secure random token
@@ -132,112 +69,279 @@ export function generateSecureToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-// Generate email verification token
-export async function generateEmailVerificationToken(userId: string): Promise<string> {
-  const token = generateSecureToken();
-  const user = USERS.find(u => u.id === userId);
-  
-  if (user) {
-    user.emailVerificationToken = token;
-    user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-    user.updatedAt = new Date();
+// Find user by email
+export async function findUserByEmail(email: string): Promise<IUser | null> {
+  try {
+    await connectDB();
+    const user = await User.findOne({ email: email.toLowerCase() });
+    return user;
+  } catch (error) {
+    console.error('Error finding user by email:', error);
+    return null;
   }
-  
-  return token;
+}
+
+// Find user by ID
+export async function findUserById(id: string): Promise<UserData | null> {
+  try {
+    await connectDB();
+    const user = await User.findById(id).select('-password -twoFactorSecret -twoFactorBackupCodes -emailVerificationToken -passwordResetToken');
+    
+    if (!user) return null;
+    
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      emailVerified: user.emailVerified,
+      twoFactorEnabled: user.twoFactorEnabled,
+      lastLogin: user.lastLogin,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
+  } catch (error) {
+    console.error('Error finding user by ID:', error);
+    return null;
+  }
+}
+
+// Create user (for registration)
+export async function createUser(email: string, name: string, password: string): Promise<UserData | null> {
+  try {
+    await connectDB();
+    
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      throw new Error('User already exists');
+    }
+    
+    const hashedPassword = await hashPassword(password);
+    
+    const newUser = new User({
+      email: email.toLowerCase(),
+      name,
+      password: hashedPassword,
+      emailVerified: false,
+      twoFactorEnabled: false,
+    });
+    
+    const savedUser = await newUser.save();
+    
+    return {
+      id: savedUser.id,
+      email: savedUser.email,
+      name: savedUser.name,
+      emailVerified: savedUser.emailVerified,
+      twoFactorEnabled: savedUser.twoFactorEnabled,
+      createdAt: savedUser.createdAt,
+      updatedAt: savedUser.updatedAt,
+    };
+  } catch (error) {
+    console.error('Error creating user:', error);
+    return null;
+  }
+}
+
+// Generate email verification token
+export async function generateEmailVerificationToken(userId: string): Promise<string | null> {
+  try {
+    await connectDB();
+    const token = generateSecureToken();
+    
+    await User.findByIdAndUpdate(userId, {
+      emailVerificationToken: token,
+      emailVerificationExpires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+    });
+    
+    return token;
+  } catch (error) {
+    console.error('Error generating email verification token:', error);
+    return null;
+  }
 }
 
 // Verify email verification token
-export async function verifyEmailVerificationToken(token: string): Promise<User | null> {
-  const user = USERS.find(u => 
-    u.emailVerificationToken === token && 
-    u.emailVerificationExpires && 
-    u.emailVerificationExpires > new Date()
-  );
-  
-  if (user) {
-    user.emailVerified = true;
-    user.emailVerificationToken = undefined;
-    user.emailVerificationExpires = undefined;
-    user.updatedAt = new Date();
-    return user;
+export async function verifyEmailVerificationToken(token: string): Promise<IUser | null> {
+  try {
+    await connectDB();
+    const user = await User.findOne({
+      emailVerificationToken: token,
+      emailVerificationExpires: { $gt: new Date() }
+    });
+    
+    if (user) {
+      user.emailVerified = true;
+      user.emailVerificationToken = undefined;
+      user.emailVerificationExpires = undefined;
+      await user.save();
+      return user;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error verifying email verification token:', error);
+    return null;
   }
-  
-  return null;
 }
 
 // Generate password reset token
 export async function generatePasswordResetToken(email: string): Promise<string | null> {
-  const user = USERS.find(u => u.email === email);
-  
-  if (user) {
-    const token = generateSecureToken();
-    user.passwordResetToken = token;
-    user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-    user.updatedAt = new Date();
-    return token;
+  try {
+    await connectDB();
+    const user = await User.findOne({ email: email.toLowerCase() });
+    
+    if (user) {
+      const token = generateSecureToken();
+      user.passwordResetToken = token;
+      user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+      await user.save();
+      return token;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error generating password reset token:', error);
+    return null;
   }
-  
-  return null;
 }
 
 // Verify password reset token
-export async function verifyPasswordResetToken(token: string): Promise<User | null> {
-  const user = USERS.find(u => 
-    u.passwordResetToken === token && 
-    u.passwordResetExpires && 
-    u.passwordResetExpires > new Date()
-  );
-  
-  return user || null;
+export async function verifyPasswordResetToken(token: string): Promise<IUser | null> {
+  try {
+    await connectDB();
+    const user = await User.findOne({
+      passwordResetToken: token,
+      passwordResetExpires: { $gt: new Date() }
+    });
+    
+    return user;
+  } catch (error) {
+    console.error('Error verifying password reset token:', error);
+    return null;
+  }
 }
 
 // Reset password with token
 export async function resetPasswordWithToken(token: string, newPassword: string): Promise<boolean> {
-  const user = await verifyPasswordResetToken(token);
-  
-  if (user) {
-    user.password = await hashPassword(newPassword);
-    user.passwordResetToken = undefined;
-    user.passwordResetExpires = undefined;
-    user.updatedAt = new Date();
-    return true;
+  try {
+    const user = await verifyPasswordResetToken(token);
+    
+    if (user) {
+      user.password = await hashPassword(newPassword);
+      user.passwordResetToken = undefined;
+      user.passwordResetExpires = undefined;
+      await user.save();
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    return false;
   }
-  
-  return false;
 }
 
 // Update user 2FA settings
 export async function updateUser2FA(userId: string, enabled: boolean, secret?: string, backupCodes?: string[]): Promise<boolean> {
-  const user = USERS.find(u => u.id === userId);
-  
-  if (user) {
-    user.twoFactorEnabled = enabled;
+  try {
+    await connectDB();
+    const updateData: any = {
+      twoFactorEnabled: enabled,
+    };
+    
     if (enabled && secret) {
-      user.twoFactorSecret = secret;
-      user.twoFactorBackupCodes = backupCodes;
+      updateData.twoFactorSecret = secret;
+      updateData.twoFactorBackupCodes = backupCodes || [];
     } else if (!enabled) {
-      user.twoFactorSecret = undefined;
-      user.twoFactorBackupCodes = undefined;
+      updateData.twoFactorSecret = undefined;
+      updateData.twoFactorBackupCodes = [];
     }
-    user.updatedAt = new Date();
-    return true;
+    
+    const result = await User.findByIdAndUpdate(userId, updateData);
+    return !!result;
+  } catch (error) {
+    console.error('Error updating user 2FA:', error);
+    return false;
   }
-  
-  return false;
 }
 
 // Use backup code
 export async function useBackupCode(userId: string, code: string): Promise<boolean> {
-  const user = USERS.find(u => u.id === userId);
-  
-  if (user && user.twoFactorBackupCodes) {
-    const codeIndex = user.twoFactorBackupCodes.findIndex(c => c === code.toUpperCase());
-    if (codeIndex > -1) {
-      user.twoFactorBackupCodes.splice(codeIndex, 1);
-      user.updatedAt = new Date();
-      return true;
+  try {
+    await connectDB();
+    const user = await User.findById(userId);
+    
+    if (user && user.twoFactorBackupCodes) {
+      const codeIndex = user.twoFactorBackupCodes.findIndex((c: string) => c === code.toUpperCase());
+      if (codeIndex > -1) {
+        user.twoFactorBackupCodes.splice(codeIndex, 1);
+        await user.save();
+        return true;
+      }
     }
+    
+    return false;
+  } catch (error) {
+    console.error('Error using backup code:', error);
+    return false;
   }
-  
-  return false;
+}
+
+// Update last login
+export async function updateLastLogin(userId: string): Promise<void> {
+  try {
+    await connectDB();
+    await User.findByIdAndUpdate(userId, {
+      lastLogin: new Date(),
+    });
+  } catch (error) {
+    console.error('Error updating last login:', error);
+  }
+}
+
+// Get user with sensitive data (for authentication)
+export async function getUserForAuth(email: string): Promise<IUser | null> {
+  try {
+    await connectDB();
+    const user = await User.findOne({ email: email.toLowerCase() });
+    return user;
+  } catch (error) {
+    console.error('Error getting user for auth:', error);
+    return null;
+  }
+}
+
+// Create default users for development (run once)
+export async function createDefaultUsers(): Promise<void> {
+  try {
+    await connectDB();
+    
+    // Check if users already exist
+    const existingUsers = await User.countDocuments();
+    if (existingUsers > 0) {
+      console.log('Default users already exist, skipping creation');
+      return;
+    }
+    
+    const defaultUsers = [
+      {
+        email: 'test@example.com',
+        name: 'Test User',
+        password: await hashPassword('password123'),
+        emailVerified: true,
+      },
+      {
+        email: 'admin@example.com',
+        name: 'Admin User',
+        password: await hashPassword('password123'),
+        emailVerified: true,
+      }
+    ];
+    
+    await User.insertMany(defaultUsers);
+    console.log('Default users created successfully');
+  } catch (error) {
+    console.error('Error creating default users:', error);
+  }
 }

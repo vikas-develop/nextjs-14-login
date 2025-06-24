@@ -74,12 +74,17 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ### Database Commands
 
 ```bash
-# Reset in-memory database (restart server)
-# Ctrl+C then npm run dev
+# Seed MongoDB with default users
+npm run seed
 
-# When using real database:
-# npx prisma migrate dev
-# npx prisma db seed
+# Connect to MongoDB shell (if installed locally)
+mongosh nextlogin
+
+# View database collections
+mongosh nextlogin --eval "db.users.find().pretty()"
+
+# Reset database (careful - deletes all data)
+mongosh nextlogin --eval "db.dropDatabase()"
 ```
 
 ### Debugging Commands
@@ -126,7 +131,8 @@ You can add these custom scripts to your `package.json`:
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "playwright test",
-    "db:reset": "echo 'Restarting server to reset in-memory database'",
+    "db:seed": "npm run seed",
+    "db:status": "mongosh nextlogin --eval \"db.stats()\"",
     "generate:secret": "node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\""
   }
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { findUserByEmail, verifyPassword, generateToken, useBackupCode } from '@/lib/auth';
+import { getUserForAuth, verifyPassword, generateToken, useBackupCode, updateLastLogin } from '@/lib/auth';
 import { verifyTOTP } from '@/lib/twoFactor';
 
 export async function POST(request: Request) {
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     }
 
     // Find user by email
-    const user = await findUserByEmail(email);
+    const user = await getUserForAuth(email);
     if (!user) {
       return NextResponse.json(
         { error: 'Invalid credentials' },
@@ -75,6 +75,9 @@ export async function POST(request: Request) {
       emailVerified: user.emailVerified,
       twoFactorEnabled: user.twoFactorEnabled,
     };
+
+    // Update last login time
+    await updateLastLogin(user.id);
 
     // Generate JWT token
     const token = generateToken(userPayload);
