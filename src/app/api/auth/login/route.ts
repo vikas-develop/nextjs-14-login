@@ -8,10 +8,69 @@ const MOCK_USER = {
   password: 'password123' // In a real app, this would be hashed
 };
 
+// Image categories for validation
+const imageCategories = {
+  animals: ['🐶', '🐱', '🐻', '🦁', '🐸', '🐧'],
+  vehicles: ['🚗', '🚲', '✈️', '🚢', '🚁', '🚌'],
+  food: ['🍎', '🍕', '🍔', '🍰', '🍌', '🍒'],
+  nature: ['🌳', '🌸', '🌞', '🌙', '⭐', '🌈']
+};
+
+// Validate image puzzle solution
+function validateImagePuzzle(puzzleData: any): boolean {
+  if (!puzzleData || !puzzleData.images || !puzzleData.selectedIds || !puzzleData.instruction) {
+    return false;
+  }
+
+  try {
+    const { images, selectedIds, instruction } = puzzleData;
+    
+    // Extract target category from instruction
+    const instructionLower = instruction.toLowerCase();
+    let targetCategory = '';
+    
+    if (instructionLower.includes('animals')) targetCategory = 'animals';
+    else if (instructionLower.includes('vehicles')) targetCategory = 'vehicles';
+    else if (instructionLower.includes('food')) targetCategory = 'food';
+    else if (instructionLower.includes('nature')) targetCategory = 'nature';
+    else return false;
+    
+    // Get expected correct images
+    const targetEmojis = imageCategories[targetCategory as keyof typeof imageCategories];
+    const correctIds = images
+      .filter((img: any) => targetEmojis.includes(img.src))
+      .map((img: any) => img.id);
+    
+    // Validate selection
+    const sortedSelected = [...selectedIds].sort();
+    const sortedCorrect = [...correctIds].sort();
+    
+    return sortedSelected.length === sortedCorrect.length &&
+           sortedSelected.every((id: number, index: number) => id === sortedCorrect[index]);
+  } catch (error) {
+    return false;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, password } = body;
+    const { email, password, puzzleData } = body;
+
+    // Validate puzzle first
+    if (!puzzleData) {
+      return NextResponse.json(
+        { error: 'Puzzle verification required' },
+        { status: 400 }
+      );
+    }
+
+    if (!validateImagePuzzle(puzzleData)) {
+      return NextResponse.json(
+        { error: 'Invalid puzzle solution' },
+        { status: 400 }
+      );
+    }
 
     // In a real application, you would:
     // 1. Validate the input
